@@ -1,4 +1,6 @@
-FROM scratch
+FROM alpine:latest
 
-COPY dnsdock /
+COPY ./build/dnsdock /
+RUN chmod a+x /dnsdock
+
 ENTRYPOINT ["/dnsdock"]

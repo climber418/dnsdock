@@ -61,6 +61,9 @@ $> go get ./...
 $> mkdir -p build && GOARCH=[amd64|arm] go build -o build/dnsdock ./cmd/dnsdock
 ```
 
+##### 也可以直接编译:
+mkdir -p build && GOARCH=amd64 go build -o build/dnsdock ./cmd/dnsdock
+ 
 #### Usage
 Dnsdock connects to Docker Remote API and keeps an up to date list of running
 containers. If a DNS request matches some of the containers their local IP

@@ -88,7 +88,7 @@ func (d *DockerManager) run(ctx context.Context) error {
 		}
 		err = d.list.AddService(container.ID, *service)
 		if err != nil {
-			return fmt.Errorf("error adding service: %w", err)
+		return fmt.Errorf("error adding service: %w", err)
 		}
 		services[container.ID] = struct{}{}
 	}
