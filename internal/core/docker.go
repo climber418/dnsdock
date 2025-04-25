@@ -88,7 +88,9 @@ func (d *DockerManager) run(ctx context.Context) error {
 		}
 		err = d.list.AddService(container.ID, *service)
 		if err != nil {
-		return fmt.Errorf("error adding service: %w", err)
+		// return fmt.Errorf("error adding service: %w", err)
+		logger.Errorf("error adding service: %w", err)
+		continue
 		}
 		services[container.ID] = struct{}{}
 	}
@@ -97,7 +99,8 @@ func (d *DockerManager) run(ctx context.Context) error {
 		if _, ok := services[id]; !ok && srv.Provider == DockerProvider {
 			err := d.list.RemoveService(id)
 			if err != nil {
-				return fmt.Errorf("error removing service: %w", err)
+			//	return fmt.Errorf("error removing service: %w", err)
+				logger.Errorf("error removing service: %w", err)
 			}
 		}
 	}
@@ -146,7 +149,8 @@ func (d *DockerManager) createHandler(m events.Message) error {
 		}
 		err = d.list.AddService(m.ID, *service)
 		if err != nil {
-			return fmt.Errorf("error adding service: %w", err)
+			// return fmt.Errorf("error adding service: %w", err)
+			logger.Errorf("error adding service: %w", err)
 		}
 	}
 	return nil
@@ -161,7 +165,8 @@ func (d *DockerManager) startHandler(m events.Message) error {
 		}
 		err = d.list.AddService(m.ID, *service)
 		if err != nil {
-			return fmt.Errorf("error adding service: %w", err)
+			// return fmt.Errorf("error adding service: %w", err)
+			logger.Errorf("error adding service: %w", err)
 		}
 	}
 	return nil
@@ -172,7 +177,8 @@ func (d *DockerManager) stopHandler(m events.Message) error {
 	if !d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
-			return fmt.Errorf("error removing service: %w", err)
+			// return fmt.Errorf("error removing service: %w", err)
+			logger.Errorf("error removing service: %w", err)
 		}
 	} else {
 		logger.Debugf("Stopped container '%s' not removed as --all argument is true", m.ID)
@@ -184,15 +190,18 @@ func (d *DockerManager) renameHandler(m events.Message) error {
 	logger.Debugf("Renamed container '%s'", m.ID)
 	err := d.list.RemoveService(m.ID)
 	if err != nil {
-		return fmt.Errorf("error removing service: %w", err)
+		// return fmt.Errorf("error removing service: %w", err)
+		logger.Errorf("error removing service: %w", err)
 	}
 	service, err := d.getService(m.ID)
 	if err != nil {
-		return fmt.Errorf("error getting service: %w", err)
+		// return fmt.Errorf("error getting service: %w", err)
+		logger.Errorf("error getting service: %w", err)
 	}
 	res := d.list.AddService(m.ID, *service)
 	if res != nil {
-		return fmt.Errorf("error removing service: %w", err)
+		// return fmt.Errorf("error removing service: %w", err)
+		logger.Errorf("error removing service: %w", err)
 	}
 	return nil
 }
@@ -202,7 +211,8 @@ func (d *DockerManager) destroyHandler(m events.Message) error {
 	if d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
-			return fmt.Errorf("error removing service: %w", err)
+		//	return fmt.Errorf("error removing service: %w", err)
+			logger.Errorf("error removing service: %w", err)
 		}
 	}
 	return nil
