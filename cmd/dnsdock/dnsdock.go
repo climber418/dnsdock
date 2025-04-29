@@ -22,6 +22,7 @@ var GitSummary string
 var logger = logging.MustGetLogger("dnsdock.main")
 
 func main() {
+    logger.Info("dnsdock starting...")
 	var cmdLine = core.NewCommandLine(GitSummary)
 	config, err := cmdLine.ParseParameters(os.Args[1:])
 	if err != nil {
@@ -80,5 +81,4 @@ func main() {
 	if err := dnsServer.Start(); err != nil {
 		logger.Fatalf("Error: '%s'", err)
 	}
-
 }
