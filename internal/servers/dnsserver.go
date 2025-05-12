@@ -131,7 +131,9 @@ func (s *DNSServer) RemoveService(id string) (err error) {
 		return err
 	}
 	if _, ok := s.services[id]; !ok {
-		return errors.New("No such service: " + id)
+		// return errors.New("No such service: " + id)
+	    logger.Infof("Removed service '%s'", id)
+        return nil
 	}
 
 	for _, alias := range s.services[id].Aliases {
