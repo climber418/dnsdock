@@ -88,11 +88,6 @@ func (d *DockerManager) run(ctx context.Context) error {
 			logger.Errorf("Error inspecting container %s: %v", container.ID, err)
 		}
 
-		if containerInfo.HostConfig.NetworkMode == "host" {
-			logger.Infof("Skipping container '%s' with host network mode", container.ID)
-		    continue	
-		}
-
 		pureName := strings.TrimPrefix(containerInfo.Name,"/")
         logger.Infof("container name:'%s' with network mode: %s, ID:%s",pureName, containerInfo.HostConfig.NetworkMode,container.ID)
 		service, err := d.getService(container.ID)
@@ -132,19 +127,6 @@ func (d *DockerManager) run(ctx context.Context) error {
 }
 
 func (d *DockerManager) handler(m events.Message,ctx context.Context) error {
-    containerInfo, err := d.client.ContainerInspect(ctx,m.ID)
-    if err != nil {
-        logger.Errorf("handler:Error inspecting container action:%s ID:%s %v", m.Action, m.ID, err)
-        return nil
-    }
-
-    if containerInfo.HostConfig.NetworkMode == "host" {
-        pureName := strings.TrimPrefix(containerInfo.Name,"/")
-        logger.Infof("handler: Skipping container %s %s. ID:'%s' with host network mode", m.Action,pureName, m.ID)
-       return nil 
-    }
-
-
 	switch m.Action {
 	case "create":
 		return d.createHandler(m)
@@ -243,7 +225,6 @@ func (d *DockerManager) destroyHandler(m events.Message) error {
 func (d *DockerManager) Stop() {
 	d.cancel()
 }
-
 func (d *DockerManager) getTargetContainerIP(networkMode string) ([]net.IP, error) {
 	var targetName string
 	if strings.HasPrefix(networkMode, "container:") {
@@ -298,7 +279,17 @@ func (d *DockerManager) getService(id string) (*servers.Service, error) {
 
 	// Handle shared network modes
 	networkMode := string(desc.HostConfig.NetworkMode)
-	if strings.HasPrefix(networkMode, "container:") || strings.HasPrefix(networkMode, "service:") {
+	logger.Infof("Processing container '%s' with network mode: '%s'", desc.Name, networkMode)
+	if networkMode == "host" {
+		logger.Infof("Detected host network mode for container '%s'", desc.Name)
+		hostIP, err := GetHostDockerInternal()
+		if err != nil {
+			logger.Warningf("Warning, failed to get host IP for '%s': %v", desc.Name, err)
+			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+		}
+		logger.Infof("Assigning host IP %s to container '%s'", hostIP.String(), desc.Name)
+		service.IPs = []net.IP{hostIP}
+	} else if strings.HasPrefix(networkMode, "container:") || strings.HasPrefix(networkMode, "service:") {
 		ips, err := d.getTargetContainerIP(networkMode)
 		if err != nil {
 			logger.Warningf("Warning, failed to get IP from target container for '%s': %v", desc.Name, err)
@@ -506,4 +497,27 @@ func overrideFromEnv(in *servers.Service, env map[string]string) (out *servers.S
 	}
 	out = in
 	return
+}
+
+
+// GetHostDockerInternal resolves host.docker.internal to get the host's IP address
+func GetHostDockerInternal() (net.IP, error) {
+	ips, err := net.LookupIP("host.docker.internal")
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve host.docker.internal: %w", err)
+	}
+
+	// Return the first IPv4 address found
+	for _, ip := range ips {
+		if ipv4 := ip.To4(); ipv4 != nil {
+			return ipv4, nil
+		}
+	}
+
+	// If no IPv4 found, return the first IP
+	if len(ips) > 0 {
+		return ips[0], nil
+	}
+
+	return nil, fmt.Errorf("no IP addresses found for host.docker.internal")
 }
