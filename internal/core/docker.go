@@ -94,12 +94,6 @@ func (d *DockerManager) run(ctx context.Context) error {
 		}
 
 		pureName := strings.TrimPrefix(containerInfo.Name,"/")
-
-		if strings.HasPrefix(string(containerInfo.HostConfig.NetworkMode), "container:") {
-			logger.Infof("Skipping container name: '%s' id:'%s' with container network mode", pureName, container.ID)
-			continue
-		}
-        
         logger.Infof("container name:'%s' with network mode: %s, ID:%s",pureName, containerInfo.HostConfig.NetworkMode,container.ID)
 		service, err := d.getService(container.ID)
 		if err != nil {
@@ -150,11 +144,6 @@ func (d *DockerManager) handler(m events.Message,ctx context.Context) error {
        return nil 
     }
 
-    if strings.HasPrefix(string(containerInfo.HostConfig.NetworkMode), "container:") {
-        pureName := strings.TrimPrefix(containerInfo.Name,"/")
-        logger.Infof("handler: Skipping container %s %s. ID:'%s' with container network mode", m.Action,pureName, m.ID)
-        return nil
-    }
 
 	switch m.Action {
 	case "create":
@@ -255,6 +244,42 @@ func (d *DockerManager) Stop() {
 	d.cancel()
 }
 
+func (d *DockerManager) getTargetContainerIP(networkMode string) ([]net.IP, error) {
+	var targetName string
+	if strings.HasPrefix(networkMode, "container:") {
+		targetName = strings.TrimPrefix(networkMode, "container:")
+	} else if strings.HasPrefix(networkMode, "service:") {
+		targetName = strings.TrimPrefix(networkMode, "service:")
+	} else {
+		return nil, fmt.Errorf("unsupported network mode: %s", networkMode)
+	}
+
+	containers, err := d.client.ContainerList(context.Background(), container.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, c := range containers {
+		info, err := d.client.ContainerInspect(context.Background(), c.ID)
+		if err != nil {
+			continue
+		}
+		
+		containerName := strings.TrimPrefix(info.Name, "/")
+		if containerName == targetName || c.ID == targetName {
+			var ips []net.IP
+			for _, network := range info.NetworkSettings.Networks {
+				if ip := net.ParseIP(network.IPAddress); ip != nil {
+					ips = append(ips, ip)
+				}
+			}
+			return ips, nil
+		}
+	}
+	
+	return nil, fmt.Errorf("target container not found: %s", targetName)
+}
+
 func (d *DockerManager) getService(id string) (*servers.Service, error) {
 	desc, err := d.client.ContainerInspect(context.Background(), id)
 	if err != nil {
@@ -271,23 +296,33 @@ func (d *DockerManager) getService(id string) (*servers.Service, error) {
 	}
 	service.Name = cleanContainerName(desc.Name)
 
-	switch len(desc.NetworkSettings.Networks) {
-	case 0:
-		// logger.Warningf("Warning, no IP address found for container '%s' ", desc.Name)
-		return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
-	default:
-		for _, value := range desc.NetworkSettings.Networks {
-			ip := net.ParseIP(value.IPAddress)
-			if ip != nil {
-				service.IPs = append(service.IPs, ip)
+	// Handle shared network modes
+	networkMode := string(desc.HostConfig.NetworkMode)
+	if strings.HasPrefix(networkMode, "container:") || strings.HasPrefix(networkMode, "service:") {
+		ips, err := d.getTargetContainerIP(networkMode)
+		if err != nil {
+			logger.Warningf("Warning, failed to get IP from target container for '%s': %v", desc.Name, err)
+			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+		}
+		service.IPs = ips
+	} else {
+		switch len(desc.NetworkSettings.Networks) {
+		case 0:
+			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+		default:
+			for _, value := range desc.NetworkSettings.Networks {
+				ip := net.ParseIP(value.IPAddress)
+				if ip != nil {
+					service.IPs = append(service.IPs, ip)
+				}
 			}
 		}
-	}
 
-    if len(service.IPs) == 0 {
-        logger.Warningf("Warning, no IP address found for container '%s'", desc.Name)
-        return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
-     }
+		if len(service.IPs) == 0 {
+			logger.Warningf("Warning, no IP address found for container '%s'", desc.Name)
+			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+		}
+	}
 
 	service = overrideFromLabels(service, desc.Config.Labels)
 	service = overrideFromEnv(service, splitEnv(desc.Config.Env))
