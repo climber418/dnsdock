@@ -62,7 +62,8 @@ $> mkdir -p build && GOARCH=[amd64|arm] go build -o build/dnsdock ./cmd/dnsdock
 ```
 
 ##### 也可以直接编译:
-mkdir -p build && GOARCH=amd64 go build -o build/dnsdock ./cmd/dnsdock
+
+mkdir -p build && CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o build/dnsdock ./cmd/dnsdock
  
 #### Usage
 Dnsdock connects to Docker Remote API and keeps an up to date list of running
