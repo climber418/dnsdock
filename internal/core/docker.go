@@ -146,12 +146,11 @@ func (d *DockerManager) handler(m events.Message, ctx context.Context) error {
 		logger.Debugf("[DockerManager] Ignored action '%s' for container '%s'", m.Action, m.ID)
 		return nil
 	}
-	
+
 	switch m.Action {
 	default:
 		logger.Infof("[DockerManager] Ignored action: '%s' for container '%s'", m.Action, m.ID)
 		return nil
-
 	case "create":
 		return d.createHandler(m)
 	case "start":
@@ -171,7 +170,7 @@ func (d *DockerManager) handler(m events.Message, ctx context.Context) error {
 }
 
 func (d *DockerManager) createHandler(m events.Message) error {
-	logger.Debugf("[DockerManager] Created container '%s'", m.ID)
+	logger.Infof("[DockerManager] Created container '%s'", m.ID)
 	if d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
@@ -186,7 +185,7 @@ func (d *DockerManager) createHandler(m events.Message) error {
 }
 
 func (d *DockerManager) startHandler(m events.Message) error {
-	logger.Debugf("[DockerManager] Started container '%s'", m.ID)
+	logger.Infof("[DockerManager] Started container '%s'", m.ID)
 	if !d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
@@ -201,7 +200,7 @@ func (d *DockerManager) startHandler(m events.Message) error {
 }
 
 func (d *DockerManager) stopHandler(m events.Message) error {
-	logger.Debugf("[DockerManager] Stopped container '%s'", m.ID)
+	logger.Infof("[DockerManager] Stopped container '%s'", m.ID)
 	if !d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
@@ -209,13 +208,13 @@ func (d *DockerManager) stopHandler(m events.Message) error {
 			logger.Errorf("[DockerManager] error removing service: %w", err)
 		}
 	} else {
-		logger.Debugf("[DockerManager] Stopped container '%s' not removed as --all argument is true", m.ID)
+		logger.Infof("[DockerManager] Stopped container '%s' not removed as --all argument is true", m.ID)
 	}
 	return nil
 }
 
 func (d *DockerManager) renameHandler(m events.Message) error {
-	logger.Debugf("[DockerManager] Renamed container '%s'", m.ID)
+	logger.Infof("[DockerManager] Renamed container '%s'", m.ID)
 	err := d.list.RemoveService(m.ID)
 	if err != nil {
 		// return fmt.Errorf("error removing service: %w", err)
@@ -234,7 +233,7 @@ func (d *DockerManager) renameHandler(m events.Message) error {
 }
 
 func (d *DockerManager) destroyHandler(m events.Message) error {
-	logger.Debugf("[DockerManager] Destroy container '%s'", m.ID)
+	logger.Infof("[DockerManager] Destroy container '%s'", m.ID)
 	if d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
@@ -247,6 +246,7 @@ func (d *DockerManager) destroyHandler(m events.Message) error {
 
 // Stop stops the DockerManager
 func (d *DockerManager) Stop() {
+	logger.Infof("[DockerManager] Stopping DockerManager")
 	d.cancel()
 }
 func (d *DockerManager) getTargetContainerIP(networkMode string) ([]net.IP, error) {
