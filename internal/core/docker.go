@@ -59,10 +59,10 @@ func (d *DockerManager) Start() (err error) {
 		perr := backoff.RetryNotify(func() error {
 			return d.run(ctx)
 		}, backoff.WithContext(backoff.NewExponentialBackOff(), ctx), func(err error, d time.Duration) {
-			logger.Errorf("Error running docker manager, retrying in %v: %s", d, err)
+			logger.Errorf("[DockerManager] Error running docker manager, retrying in %v: %s", d, err)
 		})
 		if perr != nil {
-			logger.Errorf("Unrecoverable error running docker manager: %s", perr)
+			logger.Errorf("[DockerManager] Unrecoverable error running docker manager: %s", perr)
 			cancel()
 		}
 	}()
@@ -75,8 +75,10 @@ func (d *DockerManager) run(ctx context.Context) error {
 		Filters: filters.NewArgs(filters.Arg("type", "container")),
 	})
 
+	logger.Infof("[DockerManager] run at %s", d.config.DockerHost)
 	containers, err := d.client.ContainerList(ctx, container.ListOptions{})
 	if err != nil {
+		logger.Errorf("[DockerManager] Error listing containers: %v", err)
 		return fmt.Errorf("error getting containers: %w", err)
 	}
 
@@ -85,17 +87,19 @@ func (d *DockerManager) run(ctx context.Context) error {
 		// Skip containers with host network mode
 		containerInfo, err := d.client.ContainerInspect(ctx, container.ID)
 		if err != nil {
-			logger.Errorf("Error inspecting container %s: %v", container.ID, err)
+			logger.Errorf("[DockerManager] Error inspecting container %s: %v", container.ID, err)
 		}
 
 		pureName := strings.TrimPrefix(containerInfo.Name,"/")
-        logger.Infof("container name:'%s' with network mode: %s, ID:%s",pureName, containerInfo.HostConfig.NetworkMode,container.ID)
+        logger.Infof("[DockerManager] container name:'%s' with network mode: %s, ID:%s",pureName, containerInfo.HostConfig.NetworkMode,container.ID)
 		service, err := d.getService(container.ID)
 		if err != nil {
+			logger.Errorf("[DockerManager] Error getting service for container %s: %v", container.ID, err)
 			return fmt.Errorf("error getting service: %w", err)
 		}
 		err = d.list.AddService(container.ID, *service)
 		if err != nil {
+			logger.Errorf("[DockerManager] Error adding service for container %s: %v", container.ID, err)
 			return fmt.Errorf("error adding service: %w", err)
 		}
 		services[container.ID] = struct{}{}
@@ -106,7 +110,7 @@ func (d *DockerManager) run(ctx context.Context) error {
 			err := d.list.RemoveService(id)
 			if err != nil {
 				// return fmt.Errorf("error removing service: %w", err)
-				logger.Errorf("error removing service: %w", err)
+				logger.Errorf("[DockerManager] error removing service: %w", err)
 			}
 		}
 	}
@@ -116,18 +120,38 @@ func (d *DockerManager) run(ctx context.Context) error {
 		case m := <-messageChan:
 			err := d.handler(m,ctx)
 			if err != nil {
+				logger.Errorf("[DockerManager] run ends for error handling event: %w", err)
 				return err
 			}
 		case err := <-errorChan:
+			logger.Errorf("[DockerManager] run ends for error from docker events: %w", err)
 			return err
 		case <-ctx.Done():
+			logger.Infof("[DockerManager] run ends. context done, exiting run loop")
 			return nil
 		}
 	}
 }
 
-func (d *DockerManager) handler(m events.Message,ctx context.Context) error {
+func (d *DockerManager) handler(m events.Message, ctx context.Context) error {
+	if strings.HasPrefix(string(m.Action), "exec_create:") {
+		logger.Debugf("[DockerManager] Ignored exec action '%s' for container '%s'", m.Action, m.ID)
+		return nil
+	}
+	if strings.HasPrefix(string(m.Action), "exec_start:") {
+		logger.Debugf("[DockerManager] Ignored exec action '%s' for container '%s'", m.Action, m.ID)
+		return nil
+	}
+	if strings.HasPrefix(string(m.Action), "exec_die") {
+		logger.Debugf("[DockerManager] Ignored action '%s' for container '%s'", m.Action, m.ID)
+		return nil
+	}
+	
 	switch m.Action {
+	default:
+		logger.Infof("[DockerManager] Ignored action: '%s' for container '%s'", m.Action, m.ID)
+		return nil
+
 	case "create":
 		return d.createHandler(m)
 	case "start":
@@ -147,7 +171,7 @@ func (d *DockerManager) handler(m events.Message,ctx context.Context) error {
 }
 
 func (d *DockerManager) createHandler(m events.Message) error {
-	logger.Debugf("Created container '%s'", m.ID)
+	logger.Debugf("[DockerManager] Created container '%s'", m.ID)
 	if d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
@@ -162,7 +186,7 @@ func (d *DockerManager) createHandler(m events.Message) error {
 }
 
 func (d *DockerManager) startHandler(m events.Message) error {
-	logger.Debugf("Started container '%s'", m.ID)
+	logger.Debugf("[DockerManager] Started container '%s'", m.ID)
 	if !d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
@@ -177,25 +201,25 @@ func (d *DockerManager) startHandler(m events.Message) error {
 }
 
 func (d *DockerManager) stopHandler(m events.Message) error {
-	logger.Debugf("Stopped container '%s'", m.ID)
+	logger.Debugf("[DockerManager] Stopped container '%s'", m.ID)
 	if !d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
 			// return fmt.Errorf("error removing service: %w", err)
-			logger.Errorf("error removing service: %w", err)
+			logger.Errorf("[DockerManager] error removing service: %w", err)
 		}
 	} else {
-		logger.Debugf("Stopped container '%s' not removed as --all argument is true", m.ID)
+		logger.Debugf("[DockerManager] Stopped container '%s' not removed as --all argument is true", m.ID)
 	}
 	return nil
 }
 
 func (d *DockerManager) renameHandler(m events.Message) error {
-	logger.Debugf("Renamed container '%s'", m.ID)
+	logger.Debugf("[DockerManager] Renamed container '%s'", m.ID)
 	err := d.list.RemoveService(m.ID)
 	if err != nil {
 		// return fmt.Errorf("error removing service: %w", err)
-		logger.Errorf("error removing service: %w", err)
+		logger.Errorf("[DockerManager] error removing service: %w", err)
 	}
 	service, err := d.getService(m.ID)
 	if err != nil {
@@ -204,18 +228,18 @@ func (d *DockerManager) renameHandler(m events.Message) error {
 	res := d.list.AddService(m.ID, *service)
 	if res != nil {
 		// return fmt.Errorf("error removing service: %w", err)
-		logger.Errorf("error removing service: %w", err)
+		logger.Errorf("[DockerManager] error removing service: %w", err)
 	}
 	return nil
 }
 
 func (d *DockerManager) destroyHandler(m events.Message) error {
-	logger.Debugf("Destroy container '%s'", m.ID)
+	logger.Debugf("[DockerManager] Destroy container '%s'", m.ID)
 	if d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
 			// return fmt.Errorf("error removing service: %w", err)
-			logger.Errorf("error removing service: %w", err)
+			logger.Errorf("[DockerManager] error removing service: %w", err)
 		}
 	}
 	return nil
@@ -272,46 +296,58 @@ func (d *DockerManager) getService(id string) (*servers.Service, error) {
 
 	service.Image = getImageName(desc.Config.Image)
 	if imageNameIsSHA(service.Image, desc.Image) {
-		logger.Warningf("Warning: Can't route %s, image %s is not a tag.", id[:10], service.Image)
+		logger.Warningf("[DockerManager] Warning: Can't route %s, image %s is not a tag.", id[:10], service.Image)
 		service.Image = ""
 	}
 	service.Name = cleanContainerName(desc.Name)
 
 	// Handle shared network modes
 	networkMode := string(desc.HostConfig.NetworkMode)
-	logger.Infof("Processing container '%s' with network mode: '%s'", desc.Name, networkMode)
+	logger.Infof("[DockerManager] Processing container '%s' with network mode: '%s'", desc.Name, networkMode)
 	if networkMode == "host" {
-		logger.Infof("Detected host network mode for container '%s'", desc.Name)
+		logger.Infof("[DockerManager] Detected host network mode for container '%s'", desc.Name)
 		hostIP, err := GetHostDockerInternal()
 		if err != nil {
-			logger.Warningf("Warning, failed to get host IP for '%s': %v", desc.Name, err)
+			logger.Warningf("[DockerManager] Warning, failed to get host IP for '%s': %v", desc.Name, err)
 			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
 		}
-		logger.Infof("Assigning host IP %s to container '%s'", hostIP.String(), desc.Name)
+		logger.Infof("[DockerManager] Assigning host IP %s to container '%s'", hostIP.String(), desc.Name)
 		service.IPs = []net.IP{hostIP}
 	} else if strings.HasPrefix(networkMode, "container:") || strings.HasPrefix(networkMode, "service:") {
+		logger.Infof("[DockerManager] Detected shared network mode for container '%s'", desc.Name)
 		ips, err := d.getTargetContainerIP(networkMode)
 		if err != nil {
-			logger.Warningf("Warning, failed to get IP from target container for '%s': %v", desc.Name, err)
+			logger.Warningf("[DockerManager] Warning, failed to get IP from target container for '%s': %v", desc.Name, err)
 			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
 		}
 		service.IPs = ips
 	} else {
-		switch len(desc.NetworkSettings.Networks) {
-		case 0:
-			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
-		default:
+		// Check if container has network settings
+		if len(desc.NetworkSettings.Networks) == 0 {
+			// No network settings - container might be sharing another container's network
+			// without proper prefix (e.g., Docker Compose format)
+			logger.Infof("[DockerManager] No networks found for container '%s', attempting to resolve network mode '%s' as shared network", desc.Name, networkMode)
+			ips, err := d.getTargetContainerIP("container:" + networkMode)
+			if err == nil && len(ips) > 0 {
+				logger.Infof("[DockerManager] Successfully resolved shared network for container '%s'", desc.Name)
+				service.IPs = ips
+			} else {
+				logger.Warningf("[DockerManager] Warning, could not resolve network mode '%s' for container '%s': %v", networkMode, desc.Name, err)
+				return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+			}
+		} else {
+			// Normal case - extract IPs from network settings
 			for _, value := range desc.NetworkSettings.Networks {
 				ip := net.ParseIP(value.IPAddress)
 				if ip != nil {
 					service.IPs = append(service.IPs, ip)
 				}
 			}
-		}
 
-		if len(service.IPs) == 0 {
-			logger.Warningf("Warning, no IP address found for container '%s'", desc.Name)
-			return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+			if len(service.IPs) == 0 {
+				logger.Warningf("[DockerManager] Warning, no IP address found for container '%s'", desc.Name)
+				return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+			}
 		}
 	}
 
@@ -420,7 +456,7 @@ func overrideFromLabels(in *servers.Service, labels map[string]string) (out *ser
 				}
 			}
 			if len(addrs) == 0 {
-				logger.Warningf("The prefix '%s' didn't match any IP addresses of service '%s', the service will be ignored", v, in.Name)
+				logger.Warningf("[DockerManager] The prefix '%s' didn't match any IP addresses of service '%s', the service will be ignored", v, in.Name)
 			}
 			in.IPs = addrs
 		}
@@ -486,7 +522,7 @@ func overrideFromEnv(in *servers.Service, env map[string]string) (out *servers.S
 				}
 			}
 			if len(addrs) == 0 {
-				logger.Warningf("The prefix '%s' didn't match any IP address of  service '%s', the service will be ignored", v, in.Name)
+				logger.Warningf("[DockerManager] The prefix '%s' didn't match any IP address of  service '%s', the service will be ignored", v, in.Name)
 			}
 			in.IPs = addrs
 		}

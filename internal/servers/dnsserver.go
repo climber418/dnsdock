@@ -72,7 +72,7 @@ func NewDNSServer(c *utils.Config) *DNSServer {
 		lock:     &sync.RWMutex{},
 	}
 
-	logger.Debugf("Handling DNS requests for '%s'.", c.Domain.String())
+	logger.Debugf("[DNSServer] Handling DNS requests for '%s'.", c.Domain.String())
 
 	s.mux = dns.NewServeMux()
 	s.mux.HandleFunc(c.Domain.String()+".", s.handleRequest)
@@ -107,11 +107,11 @@ func (s *DNSServer) AddService(id string, service Service) (err error) {
 
 		s.services[id] = &service
 
-		logger.Debugf(`Added service: '%s'
+		logger.Debugf(`[DNSServer] Added service: '%s'
                       %s`, id, service)
 
 		for _, alias := range service.Aliases {
-			logger.Debugf("Handling DNS requests for '%s'.", alias)
+			logger.Debugf("[DNSServer] Handling DNS requests for '%s'.", alias)
 			s.mux.HandleFunc(alias+".", s.handleRequest)
 		}
 	} else {
@@ -132,7 +132,7 @@ func (s *DNSServer) RemoveService(id string) (err error) {
 	}
 	if _, ok := s.services[id]; !ok {
 		// return errors.New("No such service: " + id)
-	    logger.Infof("Removed service '%s'", id)
+	    logger.Infof("[DNSServer] Removed service '%s'", id)
         return nil
 	}
 
@@ -142,7 +142,7 @@ func (s *DNSServer) RemoveService(id string) (err error) {
 
 	delete(s.services, id)
 
-	logger.Debugf("Removed service '%s'", id)
+	logger.Debugf("[DNSServer] Removed service '%s'", id)
 
 	return nil
 }
@@ -202,20 +202,20 @@ func (s *DNSServer) listDomains(service *Service) chan string {
 
 func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
 
-	logger.Debugf("Using DNS forwarding for '%s'", r.Question[0].Name)
-	logger.Debugf("Forwarding DNS nameservers: %s", s.config.Nameservers.String())
+	logger.Debugf("[DNSServer] Using DNS forwarding for '%s'", r.Question[0].Name)
+	logger.Debugf("[DNSServer] Forwarding DNS nameservers: %s", s.config.Nameservers.String())
 
 	// Otherwise just forward the request to another server
 	c := new(dns.Client)
 
 	// look at each Nameserver, stop on success
 	for i := range s.config.Nameservers {
-		logger.Debugf("Using Nameserver %s", s.config.Nameservers[i])
+		logger.Debugf("[DNSServer] Using Nameserver %s", s.config.Nameservers[i])
 
 		in, _, err := c.Exchange(r, s.config.Nameservers[i])
 		if err == nil {
 			if s.config.ForceTtl {
-				logger.Debugf("Forcing Ttl value of the forwarded response")
+				logger.Debugf("[DNSServer] Forcing Ttl value of the forwarded response")
 				for _, rr := range in.Answer {
 					rr.Header().Ttl = uint32(s.config.Ttl)
 				}
@@ -223,13 +223,13 @@ func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
 
 			res := w.WriteMsg(in)
 			if res != nil {
-				logger.Errorf("Unable to write response: '%s' ", res)
+				logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 			}
 			return
 		}
 
 		if i == (len(s.config.Nameservers) - 1) {
-			logger.Warningf("DNS fowarding failed: no more nameservers to try")
+			logger.Warningf("[DNSServer] DNS fowarding failed: no more nameservers to try")
 
 			// Send failure reply
 			m := new(dns.Msg)
@@ -238,11 +238,11 @@ func (s *DNSServer) handleForward(w dns.ResponseWriter, r *dns.Msg) {
 			m.SetRcode(r, dns.RcodeRefused) // REFUSED
 			res := w.WriteMsg(m)
 			if res != nil {
-				logger.Errorf("Unable to write response: '%s' ", res)
+				logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 			}
 
 		} else {
-			logger.Debugf("DNS fowarding failed: trying next Nameserver...")
+			logger.Debugf("[DNSServer] DNS fowarding failed: trying next Nameserver...")
 		}
 	}
 }
@@ -266,11 +266,11 @@ func (s *DNSServer) makeServiceA(n string, service *Service) dns.RR {
 
 	if len(service.IPs) != 0 {
 		if len(service.IPs) > 1 {
-			logger.Warningf("Multiple IP address found for container '%s'. Only the first address will be used", service.Name)
+			logger.Warningf("[DNSServer] Multiple IP address found for container '%s'. Only the first address will be used", service.Name)
 		}
 		rr.A = service.IPs[0]
 	} else {
-		logger.Errorf("No valid IP address found for container '%s' ", service.Name)
+		logger.Errorf("[DNSServer] No valid IP address found for container '%s' ", service.Name)
 	}
 
 	return rr
@@ -308,7 +308,7 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		m.Ns = s.createSOA()
 		res := w.WriteMsg(m)
 		if res != nil {
-			logger.Errorf("Unable to write response: '%s' ", res)
+			logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 		}
 		return
 	}
@@ -318,7 +318,7 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		m.Answer = s.createSOA()
 		res := w.WriteMsg(m)
 		if res != nil {
-			logger.Errorf("Unable to write response: '%s' ", res)
+			logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 		}
 		return
 	}
@@ -331,7 +331,7 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 		query = query[:len(query)-1]
 	}
 
-	logger.Debugf("DNS request for query '%s' from remote '%s'", query, w.RemoteAddr())
+	logger.Debugf("[DNSServer] DNS request for query '%s' from remote '%s'", query, w.RemoteAddr())
 
 	for service := range s.queryServices(query) {
 		var rr dns.RR
@@ -348,12 +348,12 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 			m.MsgHdr.Authoritative = true
 			res := w.WriteMsg(m)
 			if res != nil {
-				logger.Errorf("Unable to write response: '%s' ", res)
+				logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 			}
 			return
 		}
 
-		logger.Debugf("DNS record found for query '%s'", query)
+		logger.Debugf("[DNSServer] DNS record found for query '%s'", query)
 
 		m.Answer = append(m.Answer, rr)
 	}
@@ -362,12 +362,12 @@ func (s *DNSServer) handleRequest(w dns.ResponseWriter, r *dns.Msg) {
 	if len(m.Answer) == 0 {
 		m.Ns = s.createSOA()
 		m.SetRcode(r, dns.RcodeNameError) // NXDOMAIN
-		logger.Debugf("No DNS record found for query '%s'", query)
+		logger.Debugf("[DNSServer] No DNS record found for query '%s'", query)
 	}
 
 	res := w.WriteMsg(m)
 	if res != nil {
-		logger.Errorf("Unable to write response: '%s' ", res)
+		logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 	}
 }
 
@@ -381,7 +381,7 @@ func (s *DNSServer) handleReverseRequest(w dns.ResponseWriter, r *dns.Msg) {
 		m.Ns = s.createSOA()
 		res := w.WriteMsg(m)
 		if res != nil {
-			logger.Errorf("Unable to write response: '%s' ", res)
+			logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 		}
 		return
 	}
@@ -399,7 +399,7 @@ func (s *DNSServer) handleReverseRequest(w dns.ResponseWriter, r *dns.Msg) {
 			m.Ns = s.createSOA()
 			res := w.WriteMsg(m)
 			if res != nil {
-				logger.Errorf("Unable to write response: '%s' ", res)
+				logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 			}
 			return
 		}
@@ -428,7 +428,7 @@ func (s *DNSServer) handleReverseRequest(w dns.ResponseWriter, r *dns.Msg) {
 	if len(m.Answer) != 0 {
 		res := w.WriteMsg(m)
 		if res != nil {
-			logger.Errorf("Unable to write response: '%s' ", res)
+			logger.Errorf("[DNSServer] Unable to write response: '%s' ", res)
 		}
 
 	} else {
