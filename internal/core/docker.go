@@ -146,6 +146,10 @@ func (d *DockerManager) handler(m events.Message, ctx context.Context) error {
 		logger.Debugf("[DockerManager] Ignored action '%s' for container '%s'", m.Action, m.ID)
 		return nil
 	}
+	if strings.HasPrefix(string(m.Action), "health_status:") {
+		logger.Debugf("[DockerManager] Ignored health check action '%s' for container '%s'", m.Action, m.ID)
+		return nil
+	}
 
 	switch m.Action {
 	default:
@@ -347,6 +351,8 @@ func (d *DockerManager) getService(id string) (*servers.Service, error) {
 			if len(service.IPs) == 0 {
 				logger.Warningf("[DockerManager] Warning, no IP address found for container '%s'", desc.Name)
 				return nil, fmt.Errorf("Service '%s' ignored: No IP provided", id)
+			} else {
+				logger.Infof("[DockerManager] Found IP addresses for container '%s': %v", desc.Name, service.IPs)
 			}
 		}
 	}
