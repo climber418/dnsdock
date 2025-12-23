@@ -153,7 +153,11 @@ func (d *DockerManager) handler(m events.Message, ctx context.Context) error {
 
 	switch m.Action {
 	default:
-		logger.Infof("[DockerManager] Ignored action: '%s' for container '%s'", m.Action, m.ID)
+		containerName := ""
+		if name, ok := m.Actor.Attributes["name"]; ok {
+			containerName = name
+		}
+		logger.Infof("[DockerManager] Ignored action: '%s' for container %s: '%s'", m.Action, containerName, m.ID)
 		return nil
 	case "create":
 		return d.createHandler(m)
@@ -174,7 +178,11 @@ func (d *DockerManager) handler(m events.Message, ctx context.Context) error {
 }
 
 func (d *DockerManager) createHandler(m events.Message) error {
-	logger.Infof("[DockerManager] Created container '%s'", m.ID)
+	containerName := ""
+	if name, ok := m.Actor.Attributes["name"]; ok {
+		containerName = name
+	}
+	logger.Infof("[DockerManager] Created container %s: '%s'", containerName, m.ID)
 	if d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
@@ -189,7 +197,11 @@ func (d *DockerManager) createHandler(m events.Message) error {
 }
 
 func (d *DockerManager) startHandler(m events.Message) error {
-	logger.Infof("[DockerManager] Started container '%s'", m.ID)
+	containerName := ""
+	if name, ok := m.Actor.Attributes["name"]; ok {
+		containerName = name
+	}
+	logger.Infof("[DockerManager] Started container %s: '%s'", containerName, m.ID)
 	if !d.config.All {
 		service, err := d.getService(m.ID)
 		if err != nil {
@@ -204,7 +216,11 @@ func (d *DockerManager) startHandler(m events.Message) error {
 }
 
 func (d *DockerManager) stopHandler(m events.Message) error {
-	logger.Infof("[DockerManager] Stopped container '%s'", m.ID)
+	containerName := ""
+	if name, ok := m.Actor.Attributes["name"]; ok {
+		containerName = name
+	}
+	logger.Infof("[DockerManager] Stopped container %s: '%s'", containerName, m.ID)
 	if !d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
@@ -212,13 +228,17 @@ func (d *DockerManager) stopHandler(m events.Message) error {
 			logger.Errorf("[DockerManager] error removing service: %w", err)
 		}
 	} else {
-		logger.Infof("[DockerManager] Stopped container '%s' not removed as --all argument is true", m.ID)
+		logger.Infof("[DockerManager] Stopped container %s: '%s' not removed as --all argument is true", containerName, m.ID)
 	}
 	return nil
 }
 
 func (d *DockerManager) renameHandler(m events.Message) error {
-	logger.Infof("[DockerManager] Renamed container '%s'", m.ID)
+	containerName := ""
+	if name, ok := m.Actor.Attributes["name"]; ok {
+		containerName = name
+	}
+	logger.Infof("[DockerManager] Renamed container %s: '%s'", containerName, m.ID)
 	err := d.list.RemoveService(m.ID)
 	if err != nil {
 		// return fmt.Errorf("error removing service: %w", err)
@@ -237,7 +257,11 @@ func (d *DockerManager) renameHandler(m events.Message) error {
 }
 
 func (d *DockerManager) destroyHandler(m events.Message) error {
-	logger.Infof("[DockerManager] Destroy container '%s'", m.ID)
+	containerName := ""
+	if name, ok := m.Actor.Attributes["name"]; ok {
+		containerName = name
+	}
+	logger.Infof("[DockerManager] Destroy container %s: '%s'", containerName, m.ID)
 	if d.config.All {
 		err := d.list.RemoveService(m.ID)
 		if err != nil {
